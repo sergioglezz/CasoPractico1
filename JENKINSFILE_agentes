@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+
+    options { skipDefaultCheckout() }
+
+    stages {
+        stage('Get Code') {
+            steps {
+                git 'https://github.com/sergioglezz/CasoPractico1.git'
+                // Guardamos todo el código en un "paquete" llamado 'code'
+                stash name: 'code', includes: '**'
+            }
+        }
+
+    stage('Build') {
+        steps {
+            echo 'Eyyy, esto es Python. No hay que compilar nada!!!'
+        }
+    }
+
+    stage('Tests') {
+        parallel {
+            stage('Unit') {
+                agent { label 'agent1' }
+                steps {
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        unstash name: 'code' // Recuperamos el código en este agente
+                        bat '''
+                            SET PYTHONPATH=%WORKSPACE%
+                            python -m pytest --junitxml=result-unit.xml test/unit
+                        '''
+                        stash name: 'unit-res', includes: 'result-unit.xml'
+                    }
+                }
+            }
+
+            stage('Rest') {
+                agent { label 'agent2' }
+                steps {
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        unstash name: 'code'
+                        bat '''
+                            SET FLASK_APP=app/api.py
+                            start /B flask run
+                            timeout /t 5 /nobreak
+                            
+                            :: Asumiendo que Wiremock está en la carpeta del proyecto tras el unstash
+                            start /B java -jar test/wiremock/wiremock-standalone-3.3.1.jar --port 9090 --root-dir test/wiremock
+                            SET PYTHONPATH=%WORKSPACE%
+                            
+                            timeout /t 15 /nobreak
+                            
+                            python -m pytest --junitxml=result-rest.xml test/rest
+                        '''
+                        stash name: 'rest-res', includes: 'result-rest.xml'
+                    }
+                }
+            }
+        }
+    }
+
+    stage('Results') {
+        steps {
+            // Traemos los resultados de ambos agentes al nodo principal
+            unstash name: 'unit-res'
+            unstash name: 'rest-res'
+            junit 'result*.xml'
+        }
+    }
+}
+}
