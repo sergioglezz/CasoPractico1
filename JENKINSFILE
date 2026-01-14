@@ -5,7 +5,7 @@ pipeline {
 
         stage('Get Code') {
             steps {
-                git url: 'https://github.com/sergioglezz/CasoPractico1.git', branch: 'main'
+                git url: 'https://github.com/sergioglezz/CasoPractico1.git'
                 echo WORKSPACE
                 bat 'dir'
             }
