@@ -1,0 +1,41 @@
+pipeline {
+  agent any
+  stages {
+    stage('Get Code') {
+      steps {
+        git url: 'https://github.com/sergioglezz/CasoPractico1.git', branch: 'main'
+        echo WORKSPACE
+        bat 'dir'
+      }
+    }
+    stage('Unit') {
+      steps {
+            catchError(buildResult: 'UNESTABLE', stageResult: 'FAILURE'){
+                bat '''
+                    SET PYTHONPATH=%WORKSPACE%
+                    pytest test\\unit
+                '''
+            }
+        }
+    }
+    stage('Services') {
+      steps {
+        bat '''
+            SET FLASK_APP=app\\api.py
+            start flask run
+            sleep 1
+            start java -jar test\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir test\\wiremock
+            timeout /t 10 /nobreak
+            SET PYTHONPATH=%WORKSPACE%
+            pytest --junitxml=result.rest.xml test\\rest
+        '''
+      }
+    }
+    stage('Results') {
+      steps {
+        junit 'result*.xml'
+      }
+    }
+  }
+}
+
