@@ -12,12 +12,6 @@ pipeline {
             }
         }
 
-    stage('Build') {
-        steps {
-            echo 'Eyyy, esto es Python. No hay que compilar nada!!!'
-        }
-    }
-
     stage('Tests') {
         parallel {
             stage('Unit') {
@@ -42,13 +36,12 @@ pipeline {
                         bat '''
                             SET FLASK_APP=app/api.py
                             start /B flask run
-                            timeout /t 5 /nobreak
+                            ping -n 4 127.0.0.1
                             
                             :: Asumiendo que Wiremock está en la carpeta del proyecto tras el unstash
                             start /B java -jar test/wiremock/wiremock-standalone-3.3.1.jar --port 9090 --root-dir test/wiremock
                             SET PYTHONPATH=%WORKSPACE%
-                            
-                            timeout /t 15 /nobreak
+                            ping -n 4 127.0.0.1
                             
                             python -m pytest --junitxml=result-rest.xml test/rest
                         '''
@@ -61,7 +54,6 @@ pipeline {
 
     stage('Results') {
         steps {
-            // Traemos los resultados de ambos agentes al nodo principal
             unstash name: 'unit-res'
             unstash name: 'rest-res'
             junit 'result*.xml'
