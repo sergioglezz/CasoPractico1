@@ -48,7 +48,7 @@ pipeline {
                     }
                 }
 
-                stage('Services Node') {
+                stage('Services') {
                     agent { label 'agente2' }
                     steps {
                         cleanWs()
