@@ -20,7 +20,6 @@ pipeline {
                 stage('Code Quality') {
                     agent { label 'agente1' } 
                     steps {
-                        cleanWs()
                         unstash 'code'
                         bat 'whoami & hostname & echo %WORKSPACE%'
                         
@@ -52,7 +51,7 @@ pipeline {
                 stage('Services') {
                     agent { label 'agente2' }
                     steps {
-                        cleanWs()
+
                         unstash 'code'
                         bat 'whoami & hostname & echo %WORKSPACE%'
                         
