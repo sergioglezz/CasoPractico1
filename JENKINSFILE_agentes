@@ -1,10 +1,11 @@
 pipeline {
-    agent any 
+    agent none 
 
     options {skipDefaultCheckout()}
 
     stages {
         stage('Get Code') {
+            agent { label 'principal'}
             steps {
                 cleanWs()
                 git 'https://github.com/sergioglezz/CasoPractico1.git'
@@ -86,7 +87,7 @@ pipeline {
         }
 
         stage('Publish Results') {
-            agent { label 'built-in' }
+            agent { label 'principal'}
             steps {
                 cleanWs()
                 unstash 'quality-reports'
