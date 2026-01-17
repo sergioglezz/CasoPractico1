@@ -15,7 +15,7 @@ pipeline {
     stage('Tests') {
         parallel {
             stage('Unit') {
-                agent { label 'agent1' }
+                agent { label 'agente1' }
                 steps {
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                         unstash name: 'code' // Recuperamos el código en este agente
@@ -29,7 +29,7 @@ pipeline {
             }
 
             stage('Rest') {
-                agent { label 'agent2' }
+                agent { label 'agente2' }
                 steps {
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                         unstash name: 'code'
