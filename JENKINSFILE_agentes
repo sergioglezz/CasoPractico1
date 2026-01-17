@@ -1,63 +1,107 @@
 pipeline {
-    agent any
+    agent none 
 
-    options { skipDefaultCheckout() }
+    options {skipDefaultCheckout()}
 
     stages {
         stage('Get Code') {
             steps {
+                cleanWs()
                 git 'https://github.com/sergioglezz/CasoPractico1.git'
-                // Guardamos todo el código en un "paquete" llamado 'code'
+                bat 'whoami & hostname & echo %WORKSPACE%'
                 stash name: 'code', includes: '**'
             }
         }
 
-    stage('Tests') {
-        parallel {
-            stage('Unit') {
-                agent { label 'agente1' }
-                steps {
-                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                        unstash name: 'code' // Recuperamos el código en este agente
+        stage('Tests') {
+            parallel {
+                
+                stage('Code Quality') {
+                    agent { label 'agente1' } 
+                    steps {
+                        cleanWs()
+                        unstash 'code'
+                        bat 'whoami & hostname & echo %WORKSPACE%'
+                        
+                        // Pruebas Unitarias
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            bat '''
+                                SET PYTHONPATH=%WORKSPACE%
+                                pytest test\\unit
+                            '''
+                        }
+
+                        // Cobertura
                         bat '''
-                            SET PYTHONPATH=%WORKSPACE%
-                            python -m pytest --junitxml=result-unit.xml test/unit
+                        set PYTHONPATH=%WORKSPACE%
+                        coverage run --branch --source=app --omit=app\\__init__.py,app\\api.py -m pytest test\\unit
+                        coverage xml
                         '''
-                        stash name: 'unit-res', includes: 'result-unit.xml'
+
+                        // Análisis Estático (Flake8)
+                        bat 'flake8 --exit-zero --format=pylint app >flake8.out'
+
+                        // Seguridad (Bandit)
+                        bat 'bandit --exit-zero -r . -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}"'
+
+                        stash name: 'quality-reports', includes: 'result.unit.xml, coverage.xml, flake8.out, bandit.out'
                     }
                 }
-            }
 
-            stage('Rest') {
-                agent { label 'agente2' }
-                steps {
-                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                        unstash name: 'code'
-                        bat '''
-                            SET FLASK_APP=app/api.py
-                            start /B flask run
-                            ping -n 4 127.0.0.1
-                            
-                            :: Asumiendo que Wiremock está en la carpeta del proyecto tras el unstash
-                            start /B java -jar test/wiremock/wiremock-standalone-3.3.1.jar --port 9090 --root-dir test/wiremock
-                            SET PYTHONPATH=%WORKSPACE%
-                            ping -n 4 127.0.0.1
-                            
-                            python -m pytest --junitxml=result-rest.xml test/rest
-                        '''
-                        stash name: 'rest-res', includes: 'result-rest.xml'
+                stage('Services Node') {
+                    agent { label 'agente2' }
+                    steps {
+                        cleanWs()
+                        unstash 'code'
+                        bat 'whoami & hostname & echo %WORKSPACE%'
+                        
+                        // Integración (Rest)
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            bat '''
+                                SET FLASK_APP=app\\api.py
+                                start flask run
+                                start java -jar test\\wiremock\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir test\\wiremock
+                                ping -n 4 127.0.0.1
+                                SET PYTHONPATH=%WORKSPACE%
+                                pytest --junitxml=result.rest.xml test\\rest
+                                taskkill /IM flask.exe /F || ver > nul
+                            '''
+                        }
+
+                        // Rendimiento (JMeter)
+                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                            bat '''
+                                SET FLASK_APP=app\\api.py
+                                start flask run
+                                ping -n 4 127.0.0.1
+                                C:\\Users\\sergi\\OneDrive\\Documents\\apache-jmeter-5.6.3\\bin\\jmeter -n -t test\\jmeter\\flask.jmx -f -l flask.jtl
+                                taskkill /IM flask.exe /F || ver > nul
+                            '''
+                        }
+
+                        stash name: 'service-reports', includes: 'result.rest.xml, flask.jtl'
                     }
                 }
             }
         }
-    }
 
-    stage('Results') {
-        steps {
-            unstash name: 'unit-res'
-            unstash name: 'rest-res'
-            junit 'result*.xml'
+        stage('Publish Results') {
+            agent { label 'built-in' }
+            steps {
+                cleanWs()
+                unstash 'quality-reports'
+                unstash 'service-reports'
+                
+                junit 'result*.xml'
+                
+                recordIssues tools: [flake8(name:'flake8', pattern:'flake8.out')], qualityGates: [[threshold:8, type: 'TOTAL', unstable:true], [threshold:10, type: 'TOTAL', unstable:false]]
+
+                recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')], qualityGates: [[threshold: 2, type: 'TOTAL', unstable: true],[threshold: 4, type: 'TOTAL', unstable: false]]
+
+                recordCoverage qualityGates: [[criticality: 'NOTE', integerThreshold: 95, metric: 'LINE', threshold: 95.0], [criticality: 'ERROR', integerThreshold: 85, metric: 'LINE', threshold: 85.0], [criticality: 'NOTE', integerThreshold: 90, metric: 'BRANCH', threshold: 90.0], [criticality: 'ERROR', integerThreshold: 80, metric: 'BRANCH', threshold: 80.0]], tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
+
+                perfReport sourceDataFiles: 'flask.jtl'
+            }
         }
     }
-}
 }
