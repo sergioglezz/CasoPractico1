@@ -8,7 +8,7 @@ pipeline {
             agent { label 'principal'}
             steps {
                 cleanWs()
-                git 'https://github.com/sergioglezz/CasoPractico1.git'
+                git branch: 'feature_fix_coverage', url: 'https://github.com/sergioglezz/CasoPractico1.git'
                 bat 'whoami & hostname & echo %WORKSPACE%'
                 stash name: 'code', includes: '**'
             }
